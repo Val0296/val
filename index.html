@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoraggio Macchinari</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        input, select, button {
+            margin: 5px 0;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        #dashboard {
+            display: none;
+        }
+        #login {
+            display: block;
+        }
+        #gestioneMacchinari {
+            display: none;
+        }
+        #report {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Monitoraggio Macchinari</h1>
+
+    <!-- Sezione Macchinari Disponibili -->
+    <h2>Macchinari Disponibili</h2>
+    <select id="macchinario" onchange="visualizzaSelezione()">
+        <option value="">-- Seleziona --</option>
+    </select>
+
+    <label for="litri">Litri di gasolio:</label>
+    <input type="number" id="litri" placeholder="Litri" />
+    <button onclick="aggiungiRegistrazione()">Aggiungi Registrazione</button>
+
+    <!-- Login Section -->
+    <div id="login">
+        <h2>Login</h2>
+        <label for="username">Username:</label>
+        <input type="text" id="username" />
+        <button onclick="login()">Accedi</button>
+        <div id="loginError" style="color: red;"></div>
+    </div>
+
+    <!-- Menu Dopo Login -->
+    <div id="menu" style="display: none;">
+        <h2>Menu</h2>
+        <button onclick="mostraDashboard()">Dashboard</button>
+        <button onclick="mostraReport()">Report</button>
+        <button onclick="mostraGestioneMacchinari()">Gestione Macchinari</button>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Sezione Gestione Macchinari (Visibile solo dopo il login) -->
+    <div id="gestioneMacchinari">
+        <h3>Gestione Macchinari</h3>
+
+        <h4>Aggiungi Macchinario</h4>
+        <input type="text" id="nuovoMacchinario" placeholder="Nome Macchinario" />
+        <button onclick="aggiungiMacchinario()">Aggiungi</button>
+
+        <h4>Modifica Macchinario</h4>
+        <input type="text" id="nuovoNomeMacchinario" placeholder="Nuovo Nome Macchinario" />
+        <button onclick="modificaMacchinario()">Modifica</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard">
+        <h2>Dashboard</h2>
+
+        <h3>Registrazioni</h3>
+        <ul id="listaRegistrazioni"></ul>
+
+        <h3>Totale Litri per Macchinario:</h3>
+        <div id="totaliMacchinari"></div>
+
+        <h3>Statistiche</h3>
+        <div id="statistiche"></div>
+
+        <h3>Capacità Rimanente</h3>
+        <label for="capacitaBotteInput">Capacità Botte (Litri):</label>
+        <input type="number" id="capacitaBotteInput" value="2000" style="width: 80px;" onchange="aggiornaCapacitaRimanente()" />
+        <div id="capacitaRimanente"></div>
+
+        <h3>Grafico dei Consumi</h3>
+        <canvas id="graficoConsumi"></canvas>
+
+        <h3>Reset Dati</h3>
+        <button onclick="resettaDati()">Resetta Tutto</button>
+    </div>
+
+    <!-- Report -->
+    <div id="report">
+        <h2>Report Completo</h2>
+        <div id="reportContent"></div>
+        <button onclick="salvaReport()">Salva Report</button>
+    </div>
+
+    <script>
+        let registrazioni = [];
+        const totaliMacchinari = {};
+        const usernameAutorizzato = "admin"; // Cambia l'username autorizzato
+        let loggedIn = false;
+        let macchinari = JSON.parse(localStorage.getItem('macchinari')) || [
+            "Escavatore", 
+            "Trattore", 
+            "Rullo Compattatore", 
+            "Pala Meccanica", 
+            "Camion", 
+            "Generatore", 
+            "Cisterna"
+        ]; // Macchinari preimpostati
+
+        function login() {
+            const username = document.getElementById("username").value.trim();
+            if (username === usernameAutorizzato) {
+                loggedIn = true;
+                document.getElementById("login").style.display = "none";
+                document.getElementById("menu").style.display = "block"; // Mostra il menu
+                mostraDashboard(); // Mostra la dashboard di default
+                aggiornaSelezioneMacchinari();
+            } else {
+                document.getElementById("loginError").innerText = "Username non valido.";
+            }
+        }
+
+        function logout() {
+            loggedIn = false;
+            document.getElementById("login").style.display = "block";
+            document.getElementById("menu").style.display = "none";
+            document.getElementById("dashboard").style.display = "none";
+            document.getElementById("report").style.display = "none";
+            document.getElementById("gestioneMacchinari").style.display = "none";
+            document.getElementById("loginError").innerText = '';
+        }
+
+        function mostraDashboard() {
+            document.getElementById("dashboard").style.display = "block";
+            document.getElementById("report").style.display = "none";
+            document.getElementById("gestioneMacchinari").style.display = "none";
+        }
+
+        function mostraReport() {
+            document.getElementById("dashboard").style.display = "none";
+            document.getElementById("report").style.display = "block";
+            document.getElementById("gestioneMacchinari").style.display = "none";
+            generaReport();
+        }
+
+        function mostraGestioneMacchinari() {
+            document.getElementById("dashboard").style.display = "none";
+            document.getElementById("report").style.display = "none";
+            document.getElementById("gestioneMacchinari").style.display = "block";
+        }
+
+        function aggiornaSelezioneMacchinari() {
+            const selectMacchinario = document.getElementById("macchinario");
+            selectMacchinario.innerHTML = '<option value="">-- Seleziona --</option>';
+            macchinari.forEach(macchina => {
+                const option = document.createElement("option");
+                option.value = macchina;
+                option.textContent = macchina;
+                selectMacchinario.appendChild(option);
+            });
+        }
+
+        function aggiungiRegistrazione() {
+            const macchinario = document.getElementById("macchinario").value;
+            const litri = parseFloat(document.getElementById("litri").value);
+            
+            if (macchinario && !isNaN(litri)) {
+                registrazioni.push({ macchinario, litri, data: new Date() });
+
+                if (totaliMacchinari[macchinario]) {
+                    totaliMacchinari[macchinario] += litri;
+                } else {
+                    totaliMacchinari[macchinario] = litri;
+                }
+
+                document.getElementById("litri").value = '';
+                document.getElementById("macchinario").value = '';
+                
+                visualizzaRegistrazioni();
+                salvaRegistrazioni();
+                visualizzaTotali();
+                visualizzaStatistiche();
+                aggiornaCapacitaRimanente();
+                aggiornaGrafico();
+            } else {
+                alert("Compila tutti i campi.");
+            }
+        }
+
+        function aggiungiMacchinario() {
+            const nuovoMacchinario = document.getElementById("nuovoMacchinario").value.trim();
+            if (nuovoMacchinario) {
+                macchinari.push(nuovoMacchinario);
+                salvaRegistrazioni();
+                aggiornaSelezioneMacchinari();
+                document.getElementById("nuovoMacchinario").value = '';
+            } else {
+                alert("Inserisci un nome per il nuovo macchinario.");
+            }
+        }
+
+        function salvaRegistrazioni() {
+            localStorage.setItem('registrazioni', JSON.stringify(registrazioni));
+            localStorage.setItem('macchinari', JSON.stringify(macchinari)); // Salva i macchinari
+        }
+
+        function caricaRegistrazioni() {
+            const registrazioniSalvate = JSON.parse(localStorage.getItem('registrazioni')) || [];
+            registrazioni = registrazioniSalvate;
+            aggiornaSelezioneMacchinari();
+            visualizzaRegistrazioni();
+            visualizzaTotali();
+            visualizzaStatistiche();
+            aggiornaCapacitaRimanente();
+            aggiornaGrafico();
+        }
+
+        function visualizzaRegistrazioni() {
+            const lista = document.getElementById("listaRegistrazioni");
+            lista.innerHTML = '';
+            registrazioni.forEach(reg => {
+                const li = document.createElement("li");
+                li.textContent = `${reg.macchinario} - ${reg.litri} litri (${reg.data.toLocaleString()})`;
+                lista.appendChild(li);
+            });
+        }
+
+        function visualizzaTotali() {
+            const totaliDiv = document.getElementById("totaliMacchinari");
+            totaliDiv.innerHTML = '';
+            for (const [macchinario, totale] of Object.entries(totaliMacchinari)) {
+                const p = document.createElement("p");
+                p.textContent = `${macchinario}: ${totale} litri`;
+                totaliDiv.appendChild(p);
+            }
+        }
+
+        function calcolaStatistiche() {
+            const stat = {};
+            registrazioni.forEach(reg => {
+                if (!stat[reg.macchinario]) {
+                    stat[reg.macchinario] = { totale: 0, count: 0 };
+                }
+                stat[reg.macchinario].totale += reg.litri;
+                stat[reg.macchinario].count += 1;
+            });
+            return stat;
+        }
+
+        function visualizzaStatistiche() {
+            const stat = calcolaStatistiche();
+            const statisticheDiv = document.getElementById("statistiche");
+            statisticheDiv.innerHTML = '';
+
+            for (const [macchinario, dati] of Object.entries(stat)) {
+                const p = document.createElement("p");
+                const media = dati.totale / dati.count;
+                p.textContent = `${macchinario}: Totale ${dati.totale} litri, Media ${media.toFixed(2)} litri`;
+                statisticheDiv.appendChild(p);
+            }
+        }
+
+        function generaReport() {
+            const reportContent = document.getElementById("reportContent");
+            reportContent.innerHTML = '';
+
+            registrazioni.forEach(reg => {
+                const p = document.createElement("p");
+                p.textContent = `${reg.macchinario} - ${reg.litri} litri (${reg.data.toLocaleString()})`;
+                reportContent.appendChild(p);
+            });
+
+            if (reportContent.innerHTML === '') {
+                reportContent.innerHTML = 'Nessuna registrazione disponibile.';
+            }
+        }
+
+        function salvaReport() {
+            const reportContent = document.getElementById("reportContent").innerText;
+            const blob = new Blob([reportContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = 'report.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function aggiornaCapacitaRimanente() {
+            const capacitaBotte = parseFloat(document.getElementById("capacitaBotteInput").value) || 2000;
+            const totaleConsumati = Object.values(totaliMacchinari).reduce((a, b) => a + b, 0);
+            const rimanente = capacitaBotte - totaleConsumati;
+            const capacitaDiv = document.getElementById("capacitaRimanente");
+            capacitaDiv.innerHTML = `Litri mancanti per riempire la botte: ${rimanente >= 0 ? rimanente : 0} litri`;
+        }
+
+        function aggiornaGrafico() {
+            const ctx = document.getElementById('graficoConsumi').getContext('2d');
+            const macchinariNomi = Object.keys(totaliMacchinari);
+            const litriTotali = Object.values(totaliMacchinari);
+
+            if (grafico) {
+                grafico.destroy();
+            }
+
+            grafico = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: macchinariNomi,
+                    datasets: [{
+                        label: 'Litri di Gasolio',
+                        data: litriTotali,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Litri'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function modificaMacchinario() {
+            const selezione = document.getElementById("macchinario").value;
+            const nuovoNome = document.getElementById("nuovoNomeMacchinario").value.trim();
+
+            if (selezione && nuovoNome) {
+                const index = macchinari.indexOf(selezione);
+                if (index > -1) {
+                    macchinari[index] = nuovoNome;
+                    salvaRegistrazioni();
+                    aggiornaSelezioneMacchinari();
+                    document.getElementById("nuovoNomeMacchinario").value = '';
+                }
+            } else {
+                alert("Seleziona un macchinario e inserisci un nuovo nome.");
+            }
+        }
+
+        function resettaDati() {
+            if (confirm("Sei sicuro di voler resettare tutti i dati? Questa operazione è irreversibile.")) {
+                registrazioni = [];
+                Object.keys(totaliMacchinari).forEach(macchinario => {
+                    delete totaliMacchinari[macchinario];
+                });
+                localStorage.removeItem('registrazioni');
+                localStorage.removeItem('macchinari');
+                visualizzaRegistrazioni();
+                visualizzaTotali();
+                visualizzaStatistiche();
+                aggiornaCapacitaRimanente();
+                aggiornaGrafico();
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            caricaRegistrazioni();
+        });
+    </script>
+</body>
+</html>
